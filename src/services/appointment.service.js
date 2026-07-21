@@ -1,0 +1,1 @@
+//Reglas de negocio (validar horarios, disponibilidad)

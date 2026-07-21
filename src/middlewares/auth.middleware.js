@@ -1,0 +1,1 @@
+//Validación de tokens o peticiones desde n8n
