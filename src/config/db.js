@@ -1,4 +1,4 @@
-//Conexión a MongoDB Atlas
+// Conexión a MongoDB Atlas
 require('dotenv').config();
 const dns = require('node:dns');
 const { MongoClient } = require('mongodb');
@@ -6,15 +6,19 @@ const { MongoClient } = require('mongodb');
 // Forzar DNS de Google para evitar fallos SRV
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
-// Idealmente la URI debe ir en el archivo .env
-const uri = process.env.MONGO_URI 
-const client = new MongoClient(uri);
+let client;
 let db;
 
 async function connectDB() {
   if (db) return db; // Si ya está conectado, reutiliza la conexión
 
+  const uri = process.env.MONGO_URI;
+  if (!uri) {
+    throw new Error("ERROR CRÍTICO: La variable MONGO_URI no está definida en Environment.");
+  }
+
   try {
+    client = new MongoClient(uri);
     await client.connect();
     console.log("¡Conexión exitosa a MongoDB Atlas!");
     db = client.db("fisiotraining");
@@ -32,4 +36,4 @@ function getDB() {
   return db;
 }
 
-module.exports = { connectDB, getDB, client };
+module.exports = { connectDB, getDB, getClient: () => client };
