@@ -3,7 +3,7 @@ const express = require('express');
 const appointmentRoutes = require('./routes/appointment.routes');
 
 const app = express();
-
+// src/app.js
 const path = require('path');
 
 // Servir la Web App desde la carpeta 'public'
@@ -15,6 +15,11 @@ app.use(express.json());
 // Ruta de prueba/salud (Healthcheck)
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Fisiotraining API funcionando' });
+});
+
+// Ruta raíz para responder al healthcheck de Easypanel
+app.get('/', (req, res) => {
+  res.status(200).send('API Fisiotraining OK');
 });
 
 // Registrar rutas modularizadas
