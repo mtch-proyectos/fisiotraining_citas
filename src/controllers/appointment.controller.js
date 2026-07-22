@@ -1,6 +1,6 @@
 // src/controllers/appointment.controller.js
 const { getDB } = require('../config/db');
-const { obtenerHorariosDisponibles } = require('../helpers/agenda.helper');
+const { obtenerHorariosDisponibles } = require('../helpers/agenda.helpers');
 
 // 1. Obtener cupos libres
 async function getAvailableSlots(req, res) {
