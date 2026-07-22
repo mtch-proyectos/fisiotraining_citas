@@ -1,5 +1,9 @@
 // Conexión a MongoDB Atlas
 require('dotenv').config();
+
+// FIX: Hacer disponible la librería nativa crypto para la autenticación SCRAM de MongoDB
+global.crypto = require('node:crypto');
+
 const dns = require('node:dns');
 const { MongoClient } = require('mongodb');
 
