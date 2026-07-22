@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reserva de Citas - Fisiotraining</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+
+  <div class="bg-slate-800 border border-slate-700 shadow-2xl rounded-2xl p-6 sm:p-8 max-w-md w-full">
+    
+    <!-- Encabezado -->
+    <div class="text-center mb-6">
+      <h1 class="text-2xl font-bold text-teal-400">Fisiotraining 🏋️‍♂️</h1>
+      <p class="text-slate-400 text-sm mt-1">Selecciona tu fecha y horario de preferencia</p>
+    </div>
+
+    <!-- Contenedor del Formulario -->
+    <div id="booking-form" class="space-y-4">
+      
+      <!-- Teléfono (Readonly) -->
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Teléfono</label>
+        <input type="text" id="phone-input" readonly
+          class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-400 text-sm focus:outline-none cursor-not-allowed">
+      </div>
+
+      <!-- Nombre y Apellido (NUEVO CAMPO) -->
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Nombre Completo *</label>
+        <input type="text" id="nombre-input" placeholder="Ej: Maria Perez"
+          class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:border-teal-500 focus:outline-none">
+      </div>
+
+      <!-- Cédula de Identidad -->
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Cédula de Identidad *</label>
+        <input type="text" id="cedula-input" placeholder="Ej: V-12345678"
+          class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:border-teal-500 focus:outline-none">
+      </div>
+
+      <!-- Selección de Fecha -->
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Fecha de la Cita *</label>
+        <input type="date" id="fecha-input"
+          class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:border-teal-500 focus:outline-none">
+      </div>
+
+      <!-- Selección de Hora (Horarios Dinámicos) -->
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Horarios Disponibles *</label>
+        
+        <div id="loading-slots" class="hidden text-center py-4 text-slate-400 text-sm">
+          ⏳ Consultando disponibilidad...
+        </div>
+
+        <div id="no-slots" class="hidden text-center py-4 text-amber-400 text-sm bg-slate-900/50 rounded-lg border border-amber-500/20">
+          No hay turnos disponibles para esta fecha.
+        </div>
+
+        <div id="slots-container" class="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
+          <!-- Los botones de hora se inyectan dinámicamente -->
+        </div>
+      </div>
+
+      <!-- Botón de Envío -->
+      <button id="btn-submit" disabled
+        class="w-full bg-teal-500 hover:bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 font-bold py-3 rounded-xl transition duration-200 mt-2 shadow-lg shadow-teal-500/10">
+        Confirmar Cita
+      </button>
+
+    </div>
+
+    <!-- Pantalla de Éxito -->
+    <div id="success-screen" class="hidden text-center py-8 space-y-4">
+      <div class="text-5xl">🎉</div>
+      <h2 class="text-xl font-bold text-teal-400">¡Solicitud Enviada!</h2>
+      <p class="text-slate-300 text-sm">Tu cita fue registrada con éxito en estado <strong class="text-amber-400">pendiente</strong>.</p>
+      <p class="text-slate-400 text-xs">Te llegará una notificación por WhatsApp una vez que la gerencia la apruebe.</p>
+    </div>
+
+  </div>
+
+  <script>
+    // En desarrollo usa localhost:3000, en producción cambia a la URL de Render
+    const API_BASE_URL = 'http://localhost:3000/api/v1/appointments';
+
+    let selectedTime = null;
+
+    // 1. Obtener teléfono desde URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const phone = urlParams.get('phone') || '';
+    
+    const phoneInput = document.getElementById('phone-input');
+    const nombreInput = document.getElementById('nombre-input');
+    const cedulaInput = document.getElementById('cedula-input');
+    const fechaInput = document.getElementById('fecha-input');
+    const slotsContainer = document.getElementById('slots-container');
+    const loadingSlots = document.getElementById('loading-slots');
+    const noSlots = document.getElementById('no-slots');
+    const btnSubmit = document.getElementById('btn-submit');
+
+    phoneInput.value = phone || 'No especificado';
+
+    // Fecha mínima hoy
+    const today = new Date().toISOString().split('T')[0];
+    fechaInput.min = today;
+
+    // Listeners para validar que todo esté lleno antes de activar el botón
+    nombreInput.addEventListener('input', validarFormulario);
+    cedulaInput.addEventListener('input', validarFormulario);
+
+    // 2. Consulta de horarios al elegir fecha
+    fechaInput.addEventListener('change', async (e) => {
+      const fecha = e.target.value;
+      if (!fecha) return;
+
+      selectedTime = null;
+      btnSubmit.disabled = true;
+      slotsContainer.innerHTML = '';
+      noSlots.classList.add('hidden');
+      loadingSlots.classList.remove('hidden');
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/available?fecha=${fecha}`);
+        const data = await response.json();
+
+        loadingSlots.classList.add('hidden');
+
+        if (data.ok && data.disponibles && data.disponibles.length > 0) {
+          renderSlots(data.disponibles);
+        } else {
+          noSlots.classList.remove('hidden');
+        }
+      } catch (err) {
+        console.error("Error al consultar disponibilidad:", err);
+        loadingSlots.classList.add('hidden');
+        alert("Error al conectar con la API de citas.");
+      }
+    });
+
+    // 3. Renderizar bloques de hora
+    function renderSlots(slots) {
+      slotsContainer.innerHTML = '';
+      
+      slots.forEach(hora => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = hora;
+        btn.className = `py-2 text-xs font-semibold rounded-lg border transition duration-150 ${
+          selectedTime === hora
+            ? 'bg-teal-500 border-teal-400 text-slate-950 shadow-md'
+            : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-teal-500'
+        }`;
+
+        btn.onclick = () => {
+          selectedTime = hora;
+          renderSlots(slots);
+          validarFormulario();
+        };
+
+        slotsContainer.appendChild(btn);
+      });
+    }
+
+    // Validar que nombre, cédula, fecha y hora estén completos
+    function validarFormulario() {
+      const tieneTelefono = phone && phone !== 'No especificado';
+      const tieneNombre = nombreInput.value.trim().length > 2;
+      const tieneCedula = cedulaInput.value.trim().length > 3;
+      const tieneFecha = fechaInput.value;
+      const tieneHora = selectedTime !== null;
+      
+      btnSubmit.disabled = !(tieneTelefono && tieneNombre && tieneCedula && tieneFecha && tieneHora);
+    }
+
+    // 4. Enviar datos al backend
+    btnSubmit.addEventListener('click', async () => {
+      btnSubmit.disabled = true;
+      btnSubmit.textContent = 'Procesando...';
+
+      try {
+        // Paso A: Inicializar/Asegurar la sesión con el nombre
+        await fetch(`${API_BASE_URL}/init`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, nombre: nombreInput.value.trim() })
+        });
+
+        // Paso B: Verificar disponibilidad del slot
+        const resVerify = await fetch(`${API_BASE_URL}/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone,
+            fecha: fechaInput.value,
+            hora: selectedTime,
+            servicio: 'Fisioterapia'
+          })
+        });
+
+        const dataVerify = await resVerify.json();
+
+        if (!resVerify.ok || !dataVerify.ok) {
+          alert(dataVerify.mensaje || "El horario ya no está disponible.");
+          btnSubmit.textContent = 'Confirmar Cita';
+          btnSubmit.disabled = false;
+          return;
+        }
+
+        // Paso C: Confirmar e insertar en colección 'citas'
+        const resConfirm = await fetch(`${API_BASE_URL}/confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone,
+            cedula: cedulaInput.value.trim()
+          })
+        });
+
+        const dataConfirm = await resConfirm.json();
+
+        if (resConfirm.ok && dataConfirm.ok) {
+          document.getElementById('booking-form').classList.add('hidden');
+          document.getElementById('success-screen').classList.remove('hidden');
+        } else {
+          alert(dataConfirm.mensaje || "Error al registrar la cita.");
+          btnSubmit.textContent = 'Confirmar Cita';
+          btnSubmit.disabled = false;
+        }
+
+      } catch (err) {
+        console.error("Error al procesar reserva:", err);
+        alert("Ocurrió un error de conexión.");
+        btnSubmit.textContent = 'Confirmar Cita';
+        btnSubmit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
