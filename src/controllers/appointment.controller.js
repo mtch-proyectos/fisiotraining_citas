@@ -1,24 +1,47 @@
-// Lógica de entrada/salida para los endpoints (/init, /verify, /confirm)
+// src/controllers/appointment.controller.js
 const { getDB } = require('../config/db');
+const { obtenerHorariosDisponibles } = require('../helpers/agenda.helper');
 
-// 1. Iniciar sesión / consultar estado
+// 1. Obtener cupos libres
+async function getAvailableSlots(req, res) {
+  try {
+    const { fecha } = req.query;
+
+    if (!fecha) {
+      return res.status(400).json({ ok: false, error: 'El parámetro "fecha" (YYYY-MM-DD) es requerido.' });
+    }
+
+    const db = getDB();
+    const disponibles = await obtenerHorariosDisponibles(db, fecha);
+
+    return res.status(200).json({
+      ok: true,
+      fecha,
+      disponibles
+    });
+  } catch (error) {
+    console.error("Error en getAvailableSlots:", error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+}
+
+// 2. Iniciar sesión
 async function initSession(req, res) {
   try {
-    const { telefono, nombre } = req.body;
+    const { phone, nombre } = req.body;
 
-    if (!telefono) {
-      return res.status(400).json({ ok: false, message: "El campo 'telefono' es requerido." });
+    if (!phone) {
+      return res.status(400).json({ ok: false, message: "El campo 'phone' es requerido." });
     }
 
     const db = getDB();
     const sesiones = db.collection('sesiones_agenda');
 
-    // Buscar si ya existe una sesión activa para este teléfono
-    let sesion = await sesiones.findOne({ telefono, estado: { $ne: 'FINALIZADA' } });
+    let sesion = await sesiones.findOne({ phone, estado: { $ne: 'FINALIZADA' } });
 
     if (!sesion) {
       const nuevaSesion = {
-        telefono,
+        phone,
         nombre: nombre || 'Paciente',
         paso_actual: 'INICIO',
         datos_cita: {},
@@ -41,15 +64,20 @@ async function initSession(req, res) {
   }
 }
 
-// 2. Verificar y reservar borrador
+// 3. Verificar disponibilidad
 async function verifySlot(req, res) {
   try {
-    const { telefono, fecha, hora, servicio } = req.body;
+    const { phone, fecha, hora, servicio } = req.body;
     const db = getDB();
 
-    // Comprobar si ya existe una cita confirmada en esa fecha y hora
+    // Construcción limpia en formato ISO UTC
+    const fechaHoraISO = new Date(`${fecha}T${hora}:00.000Z`);
+
     const citas = db.collection('citas');
-    const ocupada = await citas.findOne({ fecha, hora });
+    const ocupada = await citas.findOne({
+      fecha_hora: fechaHoraISO,
+      estado: { $in: ['pendiente', 'confirmada'] }
+    });
 
     if (ocupada) {
       return res.status(409).json({
@@ -59,15 +87,13 @@ async function verifySlot(req, res) {
       });
     }
 
-    // Actualizar el estado de la sesión
     const sesiones = db.collection('sesiones_agenda');
     await sesiones.updateOne(
-      { telefono, estado: { $ne: 'FINALIZADA' } },
+      { phone, estado: { $ne: 'FINALIZADA' } },
       {
         $set: {
           paso_actual: 'PENDIENTE_CONFIRMACION',
-          'datos_cita.fecha': fecha,
-          'datos_cita.hora': hora,
+          'datos_cita.fecha_hora': fechaHoraISO,
           'datos_cita.servicio': servicio
         }
       }
@@ -85,34 +111,34 @@ async function verifySlot(req, res) {
   }
 }
 
-// 3. Confirmar cita y registrar en BD
+// 4. Confirmar cita
 async function confirmAppointment(req, res) {
   try {
-    const { telefono } = req.body;
+    const { phone, cedula } = req.body;
     const db = getDB();
     const sesiones = db.collection('sesiones_agenda');
 
-    const sesion = await sesiones.findOne({ telefono, estado: { $ne: 'FINALIZADA' } });
+    const sesion = await sesiones.findOne({ phone, estado: { $ne: 'FINALIZADA' } });
 
-    if (!sesion || !sesion.datos_cita.fecha) {
+    if (!sesion || !sesion.datos_cita || !sesion.datos_cita.fecha_hora) {
       return res.status(400).json({ ok: false, mensaje: "No hay una cita pendiente para este número." });
     }
 
-    // Insertar en la colección definitiva 'citas'
     const citas = db.collection('citas');
+
     const nuevaCita = {
-      telefono: sesion.telefono,
+      phone: sesion.phone,
       nombre: sesion.nombre,
-      servicio: sesion.datos_cita.servicio,
-      fecha: sesion.datos_cita.fecha,
-      hora: sesion.datos_cita.hora,
-      estatus: 'CONFIRMADA',
-      fecha_creacion: new Date()
+      cedula: cedula || 'V-00000000',
+      servicio: sesion.datos_cita.servicio || 'Fisioterapia',
+      fecha_hora: sesion.datos_cita.fecha_hora,
+      estado: 'pendiente',
+      creado_el: new Date(),
+      actualizado_el: new Date()
     };
 
-    await citas.insertOne(nuevaCita);
+    const resultado = await citas.insertOne(nuevaCita);
 
-    // Marcar sesión como finalizada
     await sesiones.updateOne(
       { _id: sesion._id },
       { $set: { estado: 'FINALIZADA', paso_actual: 'COMPLETADO' } }
@@ -120,7 +146,8 @@ async function confirmAppointment(req, res) {
 
     return res.status(201).json({
       ok: true,
-      mensaje: "¡Cita agendada con éxito!",
+      mensaje: "¡Cita solicitada con éxito! En espera de aprobación.",
+      citaId: resultado.insertedId,
       resumen: nuevaCita
     });
 
@@ -131,6 +158,7 @@ async function confirmAppointment(req, res) {
 }
 
 module.exports = {
+  getAvailableSlots,
   initSession,
   verifySlot,
   confirmAppointment
