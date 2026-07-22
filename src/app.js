@@ -4,6 +4,11 @@ const appointmentRoutes = require('./routes/appointment.routes');
 
 const app = express();
 
+const path = require('path');
+
+// Servir la Web App desde la carpeta 'public'
+app.use(express.static(path.join(__dirname, '../public')));
+
 // Middleware para entender el body JSON que envía n8n
 app.use(express.json());
 
