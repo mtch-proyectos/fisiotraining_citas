@@ -76,7 +76,7 @@ async function verifySlot(req, res) {
     const citas = db.collection('citas');
     const ocupada = await citas.findOne({
       fecha_hora: fechaHoraISO,
-      estado: { $in: ['pendiente', 'confirmada'] }
+      estado: { $in: ['por confirmar', 'confirmada'] }
     });
 
     if (ocupada) {
@@ -132,7 +132,7 @@ async function confirmAppointment(req, res) {
       cedula: cedula || 'V-00000000',
       servicio: sesion.datos_cita.servicio || 'Fisioterapia',
       fecha_hora: sesion.datos_cita.fecha_hora,
-      estado: 'pendiente',
+      estado: 'por confirmar',
       creado_el: new Date(),
       actualizado_el: new Date()
     };
